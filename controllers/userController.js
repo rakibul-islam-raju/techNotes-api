@@ -22,28 +22,33 @@ const createNewUser = asyncHandler(async (req, res) => {
 	const { username, password, roles } = req.body;
 
 	// confirm data
-	if (!username || !password || !Array.isArray(roles) || !roles.length) {
-		return res.status(400).json({ message: "All fields are required!" });
-	}
+	// if (!username || !password || !Array.isArray(roles) || !roles.length) {
+	// 	return res.status(400).json({ message: "All fields are required!" });
+	// }
 
 	// check for duplicate
-	const duplicate = await User.findOne({ username }).lean().exec();
-	if (duplicate) {
-		return res
-			.status(409)
-			.json({ message: "User already exist with this username!" });
-	}
+	// const duplicate = await User.findOne({ username }).lean().exec();
+	// if (duplicate) {
+	// 	return res
+	// 		.status(409)
+	// 		.json({ message: "User already exist with this username!" });
+	// }
 
 	// hash password
 	const hashedPass = await bcrypt.hash(password, 10);
 	const userData = { username, password: hashedPass, roles };
 
-	// create new user
-	const user = await User.create(userData);
-	if (!user) {
-		res.status(400).json({ message: "Invalid user data!" });
+	const newUser = new User(userData);
+
+	if (!newUser) {
+		res.status(400).json({ success: false, message: "Invalid user data!" });
 	} else {
-		res.status(201).json({ message: "User successfully created!", user });
+		await newUser.save();
+		res.status(201).json({
+			success: true,
+			message: "User successfully created!",
+			user: newUser,
+		});
 	}
 });
 
