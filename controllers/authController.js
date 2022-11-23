@@ -2,15 +2,21 @@ const User = require("../models/User");
 const jwt = require("jsonwebtoken");
 const asyncHandler = require("express-async-handler");
 const bcrypt = require("bcrypt");
-const { ACCESS_TOKEN_EXPIRATION } = require("../config/constants");
+const {
+	ACCESS_TOKEN_EXPIRATION,
+	REFRESH_TOKEN_EXPIRATION,
+} = require("../config/constants");
 
-function generateAccessToken(data) {
+function generateAccessOrRefreshToken(data, type = "access") {
 	return jwt.sign(
+		{ ...data },
+		type === "access"
+			? process.env.ACCESS_TOKEN_SECRET
+			: process.env.REFRESH_TOKEN_SECRET,
 		{
-			userInfo: { ...data },
-		},
-		process.env.ACCESS_TOKEN_SECRET,
-		{ expiresIn: ACCESS_TOKEN_EXPIRATION }
+			expiresIn:
+				type === "access" ? ACCESS_TOKEN_EXPIRATION : REFRESH_TOKEN_EXPIRATION,
+		}
 	);
 }
 
@@ -22,12 +28,19 @@ function generateAccessToken(data) {
 const login = asyncHandler(async (req, res) => {
 	const { username, password } = req.body;
 
-	if (!username || !password)
+	if (!username)
 		return res
 			.status(400)
-			.json({ success: false, message: "All fields are required!" });
+			.json({ success: false, message: "Username is required!" });
 
-	const user = await User.findOne({ username }).exec();
+	if (!password)
+		return res
+			.status(400)
+			.json({ success: false, message: "Password required!" });
+
+	const user = await User.findOne({ username })
+		.select("username roles password")
+		.exec();
 
 	if (!user)
 		return res.status(401).json({ success: false, message: "User not found!" });
@@ -43,20 +56,12 @@ const login = asyncHandler(async (req, res) => {
 			.status(401)
 			.json({ success: false, message: "Incorrent password!" });
 
-	const accessToken = generateAccessToken({
-		username: user.username,
-		roles: user.roles,
-	});
+	console.log("user=>", user);
+	const userInfo = { username: user.username, roles: user.roles };
+	console.log("userInfo=>", userInfo);
 
-	const refreshToken = jwt.sign(
-		{
-			userInfo: {
-				username: user.username,
-			},
-		},
-		process.env.REFRESH_TOKEN_SECRET,
-		{ expiresIn: "1d" }
-	);
+	const accessToken = generateAccessOrRefreshToken(userInfo, "access");
+	const refreshToken = generateAccessOrRefreshToken(userInfo, "refresh");
 
 	res.cookie("jwt", refreshToken, {
 		httpOnly: true, // only accessible by web servers
@@ -65,7 +70,7 @@ const login = asyncHandler(async (req, res) => {
 		maxAge: 7 * 24 * 60 * 60 * 100,
 	});
 
-	res.status(200).json({ success: true, accessToken });
+	res.status(200).json({ success: true, accessToken, refreshToken });
 });
 
 /* --->
@@ -73,8 +78,9 @@ const login = asyncHandler(async (req, res) => {
     @root GET /auth/refresh
     @access public
 */
-const refresh = asyncHandler(async (req, res) => {
+const refresh = (req, res) => {
 	const cookies = req.cookies;
+	console.log("cookies =>", cookies);
 	if (!cookies?.jwt)
 		return res.status(401).json({ success: false, message: "Unauthorized!" });
 
@@ -82,25 +88,32 @@ const refresh = asyncHandler(async (req, res) => {
 
 	jwt.verify(
 		refreshToken,
-		process.env.ACCESS_TOKEN_SECRET,
+		process.env.REFRESH_TOKEN_SECRET,
 		asyncHandler(async (err, decoded) => {
-			if (err)
+			if (err) {
+				console.log("err =>", err);
 				return res.status(403).json({ success: false, message: "Forbidden!" });
+			}
+			console.log("decoded =>", decoded);
 			const user = await User.findOne({ username: decoded.username });
+			console.log("user =>", user);
 			if (!user)
 				return res
 					.status(401)
 					.json({ success: false, message: "Unauthorized!" });
 
-			const accessToken = generateAccessToken({
-				username: user.username,
-				roles: user.roles,
-			});
+			const accessToken = generateAccessOrRefreshToken(
+				{
+					username: user.username,
+					roles: user.roles,
+				},
+				"access"
+			);
 
 			res.status(200).json({ success: true, accessToken });
 		})
 	);
-});
+};
 
 /* --->
     @desc Post logout
@@ -109,8 +122,10 @@ const refresh = asyncHandler(async (req, res) => {
 */
 const logout = asyncHandler(async (req, res) => {
 	const cookies = req.cookies;
-	if (!cookies?.jwt) return res.status(204);
+	console.log("2 ==", cookies);
+	if (!cookies?.jwt) return res.sendStatus(204);
 	res.clearCookie("jwt", { httpOnly: true, sameSite: "none", secure: true });
+	res.json({ message: "Cookie cleared" });
 });
 
 module.exports = {

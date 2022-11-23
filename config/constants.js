@@ -1,4 +1,4 @@
-const ACCESS_TOKEN_EXPIRATION = "10s";
+const ACCESS_TOKEN_EXPIRATION = "10m";
 const REFRESH_TOKEN_EXPIRATION = "1d";
 
 module.exports = {
