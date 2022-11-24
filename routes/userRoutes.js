@@ -5,10 +5,10 @@ const verifyJWT = require("../middleware/verifyJWT");
 
 // router.use(verifyJWT);
 
-router.get("/", userController.getAllUsers);
 router.post("/", userController.createNewUser);
-router.get("/:userId", userController.getUserDetails);
-router.patch("/:userId", userController.updateUser);
-router.delete("/:userId", userController.deleteUser);
+router.get("/", verifyJWT, userController.getAllUsers);
+router.get("/:userId", verifyJWT, userController.getUserDetails);
+router.patch("/:userId", verifyJWT, userController.updateUser);
+router.delete("/:userId", verifyJWT, userController.deleteUser);
 
 module.exports = router;
